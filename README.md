@@ -1,17 +1,32 @@
 # XrayVision 🫁
 
-흉부 X-ray 이상 탐지 ViT 파인튜닝 동아리 프로젝트
+> 흉부 X-ray 이상 탐지 — ViT-Base/16 파인튜닝 + 멀티태스크 학습 (분류 + 세그멘테이션)
 
-## 프로젝트 개요
+![최종 결과](docs/images/final_results.png)
 
-**ViT-L/16 Full Fine-tuning → 흉부 X-ray 입력 → 이상 확률(%) + 이상 영역 마스크 오버레이된 결과 이미지 출력**
+---
 
-### 최종 출력 형태
+## 프로젝트 소개
+
+ViT-Base/16을 RSNA Pneumonia Detection 데이터셋(26,684장)으로 파인튜닝하여 흉부 X-ray에서 폐렴 이상 여부를 분류하고, 이상 영역을 세그멘테이션 마스크로 시각화하는 AI 시스템이다.
+
+**AUROC 0.879** 달성 (목표 0.85 초과)
+
+---
+
+## 결과 예시
+
+![오버레이 결과](docs/images/week3_overlay.png)
+
 ```
-원본 X-ray + 이상 영역 마스크 오버레이
-이상 확률: 87.3%  ██████████░░
-판정: ⚠️ 이상 의심
-저장: results/[파일명]_result.png
+python week3/inference.py data/stage_2_train_images/[파일명].dcm
+
+============================
+File:   [파일명].dcm
+Status: ABNORMAL
+Prob:   84.6%
+Saved:  results/[파일명]_result.png
+============================
 ```
 
 ---
@@ -19,44 +34,27 @@
 ## 모델 구조
 
 ```
-ViT-L/16 Backbone (Full Fine-tuning)
-        │
-        ├──→ Classification Head
-        │    CLS 토큰 → FC → Sigmoid → 이상 확률 (0~100%)
-        │
-        └──→ Segmentation Head
-             패치 토큰 → reshape(14×14) → Bilinear Upsample → 224×224 마스크
+입력: [B, 3, 224, 224]
+    ↓
+ViT-Base/16 Backbone (Full Fine-tuning)
+    ├── CLS 토큰 → Classification Head → 이상 확률 [0~1]
+    └── 패치 토큰 → reshape(14×14) → Segmentation Head → 마스크 [224×224]
 ```
 
-### 손실 함수
-```
-Total Loss = α · BCE Loss (분류) + β · Dice Loss (세그멘테이션)
-초기값: α=0.5, β=0.5
-```
+**Total Loss = 0.7 × LabelSmoothingBCE + 0.3 × DiceLoss**
 
 ---
 
-## 데이터셋
+## 성능
 
-- **ChestX-Det** (HuggingFace: `natealberti/ChestX-Det`)
-- 3,578장 (정상 611장 / 이상 2,967장)
-- bbox + 세그멘테이션 마스크 포함
-- Train/Val/Test = 8:1:1 (stratify 분할)
-
----
-
-## 기술 스택
-
-| 항목 | 선택 |
-|------|------|
-| 베이스 모델 | ViT-L/16 (HuggingFace Transformers) |
-| 프레임워크 | PyTorch + HuggingFace |
-| Optimizer | AdamW (lr=1e-5) |
-| Scheduler | CosineAnnealingLR |
-| 학습 기법 | Mixed Precision + Gradient Clipping |
-| 배치 사이즈 | 16 |
-| 입력 해상도 | 224×224 |
-| 평가 지표 | AUROC, IoU, Dice Score |
+| 지표 | 값 |
+|------|-----|
+| **AUROC** | **0.8790** |
+| Accuracy | 0.79 |
+| 정상 Precision | 0.93 |
+| 이상 Recall | 0.79 |
+| Mean IoU | 0.3617 |
+| Mean Dice | 0.4997 |
 
 ---
 
@@ -67,70 +65,116 @@ Total Loss = α · BCE Loss (분류) + β · Dice Loss (세그멘테이션)
 python -m venv .venv
 .venv\Scripts\Activate.ps1  # Windows
 
-# PyTorch (CUDA 12.8, Blackwell 지원)
+# PyTorch (CUDA 12.8, RTX 5090 Blackwell 지원)
 pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
 
 # 나머지 패키지
-pip install transformers accelerate
-pip install opencv-python matplotlib pillow
-pip install scikit-learn tqdm
-pip install datasets
+pip install -r requirements.txt
 ```
 
 환경 확인:
 ```bash
-python config.py
+python week1/config.py
 ```
 
 ---
 
-## 파일 구조
+## 데이터셋
+
+[RSNA Pneumonia Detection Challenge](https://www.kaggle.com/competitions/rsna-pneumonia-detection-challenge) (Kaggle)
+
+다운로드 후 `data/` 폴더 구조:
+```
+data/
+├── stage_2_train_images/    # DICOM 파일 (26,684장)
+├── stage_2_train_labels.csv/
+└── stage_2_detailed_class_info.csv/
+```
+
+---
+
+## 사용법
+
+### 학습
+
+```bash
+python week2/train.py
+```
+
+### 평가
+
+```bash
+python week2/metrics.py
+```
+
+### 단일 이미지 추론
+
+```bash
+python week3/inference.py [이미지 경로] --checkpoint checkpoints/best_model.pt
+```
+
+### 시각화
+
+```bash
+python week3/visualize.py
+```
+
+---
+
+## 프로젝트 구조
 
 ```
 XrayVision/
-├── config.py        # 환경 확인
-├── dataset.py       # ChestX-Det 전처리 + PyTorch Dataset
-├── train.py         # DataLoader + 학습 루프
-├── model.py         # ViT-L/16 + 멀티태스크 헤드
-├── metrics.py       # AUROC, IoU, Dice Score
-├── visualize.py     # 마스크 오버레이 + 결과 이미지 저장
-├── inference.py     # CLI 추론
-├── data_split.json  # Train/Val/Test 분할 인덱스
-├── requirements.txt
-└── results/         # 출력 이미지 저장
+├── checkpoints/
+│   └── best_model.pt          # 학습된 모델 (Epoch 9, Val Loss 0.4771)
+├── data/                      # RSNA 데이터셋
+├── docs/
+│   ├── images/                # 문서용 이미지
+│   ├── WEEK1_REPORT.md
+│   ├── WEEK2_REPORT.md
+│   ├── WEEK3_REPORT.md
+│   └── FINAL_REPORT.md
+├── results/
+│   └── samples/               # 추론 결과 이미지
+├── week1/
+│   ├── config.py              # 환경 확인
+├── week2/
+│   ├── dataset.py             # RSNA Dataset 클래스
+│   ├── model.py               # XrayViT 모델
+│   ├── train.py               # 학습 루프
+│   └── metrics.py             # AUROC, IoU, Dice 평가
+├── week3/
+│   ├── visualize.py           # 마스크 시각화
+│   ├── inference.py           # CLI 추론
+│   ├── batch_inference.py     # 배치 추론
+│   └── generate_docs_images.py
+├── README.md
+└── requirements.txt
 ```
 
 ---
 
-## 진행 상황
+## 학습 곡선
 
-### 1주차 — 환경 세팅 + 데이터 준비 ✅
-- [x] Day 1: 환경 세팅 (PyTorch CUDA 12.8, venv)
-- [x] Day 2: 데이터셋 준비 (ChestX-Det HuggingFace)
-- [x] Day 3: 전처리 (이미지/마스크 바이너리 변환)
-- [x] Day 4: Train/Val/Test 분할 (8:1:1, stratify)
-- [x] Day 5: PyTorch Dataset 클래스 구현
-- [x] Day 6: DataLoader + WeightedRandomSampler
+![학습 곡선](docs/images/week2_training_curve.png)
 
-### 2주차 — 모델 구현 + 학습 🔄
-- [ ] Day 8: ViT-L/16 로드
-- [ ] Day 9: Classification Head
-- [ ] Day 10: Segmentation Head
-- [ ] Day 11: 멀티태스크 모델 통합
-- [ ] Day 12: 학습 루프
-- [ ] Day 13: 학습 실행
-
-### 3주차 — 평가 + 결과 이미지
-- [ ] Day 15~21
-
-### 4주차 — 보고서 + 발표
-- [ ] Day 22~28
+Early Stopping이 Epoch 34에서 발동, Best model은 Epoch 9에서 저장됐다.
 
 ---
 
-## GPU 환경
+## 개발 환경
 
-- NVIDIA GeForce RTX 5090 Laptop GPU
-- VRAM: 25.7GB
-- CUDA: 12.8 (Blackwell, sm_120)
-- PyTorch: 2.12.0.dev (nightly)
+| 항목 | 사양 |
+|------|------|
+| GPU | NVIDIA RTX 5090 Laptop |
+| VRAM | 25.7 GB |
+| CUDA | 12.8 (Blackwell, sm_120) |
+| PyTorch | 2.12.0.dev+cu128 (nightly) |
+| OS | Windows 11 |
+
+---
+
+## 참고 문헌
+
+- Dosovitskiy, A., et al. (2020). An Image is Worth 16x16 Words. *arXiv:2010.11929*
+- Shih, G., et al. (2019). Augmenting the NIH Chest Radiograph Dataset. *Radiology: AI*

@@ -1,163 +1,169 @@
 # 1주차 활동 보고서
-
-## 프로젝트: XrayVision
-> 흉부 X-ray 이상 탐지 ViT 파인튜닝 동아리 프로젝트
+## 프로젝트: XrayVision — 흉부 X-ray 이상 탐지
 
 ---
 
-## 주차 목표
-- 개발 환경 세팅 완료
-- 데이터셋 수집 및 전처리 파이프라인 구축
-- PyTorch Dataset/DataLoader 구현
+## 목표
+개발 환경 구성, 데이터셋 탐색 및 전처리 파이프라인 설계, PyTorch Dataset/DataLoader 구현
 
 ---
 
-## 활동 요약 및 성과
+## 환경 세팅
 
-### Day 1 — 개발 환경 세팅
-- Python 3.11 기반 venv 가상환경 구성
-- PyTorch nightly (cu128) 설치 — RTX 5090 Laptop (Blackwell, sm_120) 지원 버전으로 교체
-  - 기존 PyTorch 2.5.1+cu121은 sm_120 미지원 → 2.12.0.dev+cu128로 업그레이드
-- HuggingFace Transformers, OpenCV, scikit-learn 등 핵심 패키지 설치 완료
-- 환경 확인 결과:
-  ```
-  PyTorch: 2.12.0.dev20260408+cu128
-  CUDA 사용 가능: True
-  GPU: NVIDIA GeForce RTX 5090 Laptop GPU
-  VRAM: 25.7 GB
-  Transformers: 5.8.0
-  OpenCV: 4.13.0
-  ```
+Python 3.11 기반 venv 가상환경을 구성하고, RTX 5090 Laptop GPU(Blackwell, sm_120)의 CUDA 호환성 문제를 해결하기 위해 PyTorch nightly(cu128) 버전으로 설치했다. 기존 PyTorch 2.5.1+cu121은 sm_120 아키텍처를 지원하지 않아 `UserWarning`이 발생했고, 2.12.0.dev+cu128로 교체하여 해결했다.
 
-### Day 2 — 데이터셋 수집 (1차 시도: ChestX-Det)
-- RSNA, VinBigData, NIH ChestX-ray14 등 여러 데이터셋 검토
-- **1차 선택: `natealberti/ChestX-Det` (HuggingFace)**
-  - 선택 이유: Kaggle 전화번호 인증 문제로 HuggingFace 기반으로 전환
-  - 3,578장 (정상 611장 / 이상 2,967장)
-  - 13개 질환, image / mask / label 컬럼 포함
-  - bbox + 세그멘테이션 마스크 전체 제공
+**최종 환경:**
+```
+PyTorch:      2.12.0.dev20260408+cu128
+CUDA:         True (sm_120, Blackwell)
+GPU:          NVIDIA GeForce RTX 5090 Laptop GPU
+VRAM:         25.7 GB
+Transformers: 5.8.0
+OpenCV:       4.13.0
+```
 
-> **이후 데이터셋 변경**: 2주차 학습 결과 AUROC 0.47 (랜덤 수준) 발생 → 데이터 부족이 주요 원인으로 판단 → **RSNA Pneumonia Detection(26,684장)으로 최종 교체** (2주차 참고)
-
-### Day 3 — 데이터 전처리 1 (ChestX-Det 기준)
-- RGBA → RGB 변환
-- 224×224 리사이즈 (ViT 입력 규격)
-- RGB 마스크 → 바이너리 마스크 변환 (이상=1, 정상=0)
-- 픽셀값 0~255 → 0.0~1.0 정규화
-- 전처리 결과 시각화 검증 완료
-- **이 파이프라인은 이후 RSNA 전처리 설계의 기반이 됨**
-
-### Day 4 — 데이터 분할 (ChestX-Det 기준)
-- 전체 3,578장 라벨 수집 및 분포 분석
-  - 정상: 611장 (17.1%)
-  - 이상: 2,967장 (82.9%) → 클래스 불균형 확인
-- stratify 옵션으로 비율 유지하며 8:1:1 분할
-  - Train: 2,862장 / Val: 358장 / Test: 358장
-- **이 분할 방식은 이후 RSNA 분할에도 동일하게 적용됨**
-
-### Day 5 — PyTorch Dataset 클래스 구현
-- `XrayDataset` 클래스 구현
-- 기본 변환: ToTensor + ImageNet 정규화 (mean/std)
-- 증강 변환: RandomHorizontalFlip, RandomVerticalFlip, RandomRotation, ColorJitter, RandomAffine, GaussianBlur
-- 출력 형태:
-  ```
-  이미지: torch.Size([3, 224, 224]), float32
-  마스크: torch.Size([1, 224, 224]), float32
-  라벨:   tensor(0. or 1.)
-  ```
-
-### Day 6 — DataLoader + 클래스 불균형 처리
-- `WeightedRandomSampler` 적용 — 정상/이상 배치 내 비율 균형화
-- DataLoader 구성:
-  - Train: batch=32, sampler=WeightedRandomSampler, num_workers=4, pin_memory=True
-  - Val/Test: batch=32, shuffle=False
-- 배치 시각화 검증 완료
+환경 확인 스크립트: `week1/config.py`
 
 ---
 
-## 데이터셋 전환 히스토리
+## 데이터셋 탐색 및 선택 과정
 
-1주차에서 구축한 ChestX-Det 파이프라인은 2주차 학습에서 성능 문제로 RSNA로 전환됐지만, 1주차에서 확립한 핵심 설계 원칙들은 그대로 유지됐다.
+여러 흉부 X-ray 데이터셋을 검토하면서 다음 조건을 기준으로 선택했다:
+- 세그멘테이션 마스크 또는 bbox 레이블 포함
+- 충분한 데이터 규모
 
-| 항목 | ChestX-Det (1주차) | RSNA (최종) |
-|------|-------------------|------------|
-| 장수 | 3,578장 | 26,684장 |
-| 포맷 | PNG (HuggingFace) | DICOM (.dcm) |
-| 마스크 | 세그멘테이션 마스크 | bbox → 마스크 변환 |
-| 분할 방식 | 8:1:1 stratify | 8:1:1 stratify (동일) |
-| 증강 방식 | RandomFlip 등 | 동일 |
-| 전환 이유 | - | AUROC 0.47 → 데이터 부족 판단 |
+| 검토 데이터셋 | 장수 | 결과 |
+|------------|------|------|
+| ChestX-Det (HuggingFace) | 3,578장 | 마스크 있음, 인증 없음 → 1차 시도했으나 데이터 부족으로 탈락 |
+| VinBigData Chest X-ray | 18,000장 | Kaggle 403 오류 → 탈락 |
+| NIH ChestX-ray14 | 112,000장 | bbox 1,000장뿐 → 탈락 |
+| **RSNA Pneumonia Detection** | **26,684장** | **bbox 전체 포함, Kaggle 인증 후 선택** |
+
+**최종 선택: RSNA Pneumonia Detection Challenge**
+- 26,684장 DICOM 포맷
+- bbox 레이블 포함 (Lung Opacity 클래스)
+- 3개 클래스 → 이진 분류 변환
+
+> **데이터셋 선택 히스토리:** 처음엔 Kaggle 인증 문제로 ChestX-Det(3,578장)을 먼저 시도했으나 AUROC 0.47(랜덤 수준)이 나왔다. 데이터 부족이 원인으로 판단하여 Kaggle 인증 후 RSNA(26,684장)로 전환했다.
 
 ---
 
-## 주요 수치 (ChestX-Det 기준)
+## 전처리 파이프라인 구현
 
-| 항목 | 값 |
-|------|-----|
-| 전체 데이터 | 3,578장 |
-| Train | 2,862장 |
-| Val | 358장 |
-| Test | 358장 |
-| 이상 비율 | 82.9% |
-| 이미지 해상도 | 224×224 |
-| 배치 사이즈 | 32 |
+RSNA DICOM 파일 기준으로 전처리 파이프라인을 구현했다.
+
+```
+DICOM 파일 읽기 (pydicom)
+    ↓
+pixel_array → float32 → 0~255 정규화
+    ↓
+흑백 → RGB 3채널 변환
+    ↓
+224×224 리사이즈 (Bilinear)
+    ↓
+bbox → 바이너리 마스크 변환 (1024×1024 → 224×224, Nearest)
+    ↓
+ToTensor + ImageNet 정규화
+(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+```
+
+![전처리 파이프라인](images/week1_pipeline.png)
+
+**DICOM 이미지 로드:**
+```python
+def load_rsna_image(dcm_path):
+    dcm = pydicom.dcmread(dcm_path)
+    img = dcm.pixel_array.astype(np.float32)
+    img = (img - img.min()) / (img.max() - img.min() + 1e-8) * 255
+    img_pil = Image.fromarray(img.astype(np.uint8)).convert('RGB')
+    return img_pil.resize((224, 224), Image.BILINEAR)
+```
+
+**bbox → 바이너리 마스크 변환:**
+```python
+def make_rsna_mask(bboxes, orig_size=1024):
+    mask = np.zeros((orig_size, orig_size), dtype=np.float32)
+    for x, y, w, h in bboxes:
+        mask[int(y):int(y+h), int(x):int(x+w)] = 1.0
+    mask_pil = Image.fromarray((mask * 255).astype(np.uint8))
+    return np.array(mask_pil.resize((224, 224), Image.NEAREST)) / 255.0
+```
+
+---
+
+## 데이터 분할
+
+전체 26,684장을 stratify 옵션으로 클래스 비율을 유지하며 8:1:1 분할했다.
+
+| 분할 | 장수 | 정상 | 이상 |
+|------|------|------|------|
+| Train | 21,347장 | 16,537 | 4,810 |
+| Val | 2,669장 | 2,068 | 601 |
+| Test | 2,669장 | 2,068 | 601 |
+
+정상 77% / 이상 36%로 클래스 불균형이 있어 `WeightedRandomSampler` 도입을 결정했다.
+
+---
+
+## PyTorch Dataset / DataLoader 구현
+
+`XrayDataset` 클래스를 구현하여 이미지, 마스크, 라벨을 반환하도록 했다.
+
+**데이터 증강 (Train 전용):**
+```python
+T.RandomHorizontalFlip(p=0.5)
+T.RandomVerticalFlip(p=0.2)
+T.RandomRotation(degrees=15)
+T.ColorJitter(brightness=0.3, contrast=0.3)
+T.RandomAffine(degrees=0, translate=(0.1, 0.1))
+T.GaussianBlur(kernel_size=3, sigma=(0.1, 2.0))
+T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+```
+
+**DataLoader 구성:**
+- Train: `batch=32, WeightedRandomSampler, num_workers=4, pin_memory=True`
+- Val/Test: `batch=32, shuffle=False`
+
+최종 출력 형태:
+```
+이미지: torch.Size([3, 224, 224]), float32
+마스크: torch.Size([1, 224, 224]), float32
+라벨:   tensor(0. or 1.)
+```
+
+---
+
+## 트러블슈팅
+
+| 문제 | 원인 | 해결 |
+|------|------|------|
+| `conda` 명령어 인식 안 됨 | Anaconda 미설치 | venv로 전환 |
+| RTX 5090 CUDA 경고 | PyTorch 2.5.1이 sm_120 미지원 | nightly cu128로 교체 |
+| `datasets` 모듈 없음 | 시스템 Python에 설치됨 | pip 복구 후 venv에 재설치 |
+| Kaggle 403 오류 | 전화번호 인증 필요 | 인증 후 RSNA 다운로드 |
+| DICOM `stage_2_train_labels.csv` 폴더로 인식 | 압축 해제 시 폴더 구조 중첩 | 경로를 `data/stage_2_train_labels.csv/stage_2_train_labels.csv`로 수정 |
 
 ---
 
 ## AI 활용 내역
 
-### 활용한 부분
+| 작업 | AI 활용 | 직접 판단/수정 |
+|------|--------|--------------|
+| CUDA 버전 선택 | 버전별 호환성 분석 | RTX 5090 sm_120 직접 확인 후 nightly 결정 |
+| 데이터셋 비교 | 후보 데이터셋 분석 | 인증 문제, 데이터 크기 직접 확인 후 결정 |
+| 전처리 코드 | DICOM 읽기, 마스크 변환 초안 | orig_size=1024 직접 확인, 변환 로직 검증 |
+| DataLoader 설정 | WeightedRandomSampler 방법 제시 | num_workers, pin_memory 직접 실험 |
 
-| 작업 | AI 활용 내용 | 직접 검토/수정 내용 |
-|------|-------------|-------------------|
-| 환경 세팅 | PyTorch CUDA 버전 선택 가이드 | RTX 5090 sm_120 호환 문제 직접 확인 후 nightly로 전환 결정 |
-| 데이터셋 선택 | 여러 데이터셋 비교 분석 | Kaggle 인증 문제, 마스크 유무 등 직접 확인하며 최종 선택 |
-| 전처리 코드 | preprocess_image, preprocess_mask 초안 | 바이너리 변환 로직 직접 검증, 시각화로 결과 확인 |
-| Dataset 클래스 | XrayDataset 초안 생성 | augment 파라미터 구조, transform 구성 직접 수정 |
-| DataLoader 설정 | WeightedRandomSampler 적용 방법 | num_workers, pin_memory 설정 직접 실험 |
-
-### AI가 틀렸거나 수정한 사례
-- **데이터셋 선택**: AI가 RSNA → VinBigData → NIH 순으로 추천했으나, 인증/등록 문제로 HuggingFace ChestX-Det으로 직접 결정 (결과적으로 2주차에서 데이터 부족 문제 발생 → RSNA로 재전환)
-- **pip 환경 문제**: venv 내 pip 손상 문제는 AI 제안(`ensurepip --upgrade`)으로 해결했으나, 시스템 Python과 venv 충돌 원인은 직접 디버깅
-- **datasets 모듈 경로**: 시스템 Python에 설치된 datasets과 venv 충돌 — AI 제안 방법으로 해결
-
-### AI 활용 시간 절약 추정
-- 데이터셋 조사: 약 2시간 절약
-- 전처리 코드 작성: 약 1.5시간 절약
-- 디버깅 (pip, CUDA 버전): 약 1시간 절약
-- **총 추정 절약 시간: 약 4.5시간**
+**AI가 틀린 사례:** AI가 처음에 인증 없는 ChestX-Det을 추천했으나 데이터 부족(3,578장)으로 AUROC 0.47이 나왔다. 직접 Kaggle 인증 후 RSNA로 재전환하여 문제를 해결했다.
 
 ---
 
-## 트러블슈팅 기록
-
-| 문제 | 원인 | 해결 |
-|------|------|------|
-| `conda` 명령어 인식 안 됨 | Anaconda 미설치, venv 사용으로 전환 | `python -m venv .venv` |
-| RTX 5090 CUDA 경고 | PyTorch 2.5.1이 sm_120 미지원 | PyTorch nightly cu128로 교체 |
-
----
-
-## 생성된 파일
+## 생성 파일
 
 ```
-XrayVision/
-├── week1/
-│   ├── config.py          # 환경 확인 스크립트
-│   └── data_split.py      # Train/Val/Test 분할 생성 (ChestX-Det 기준)
-├── data/
-│   └── data_split.json    # 분할 인덱스 (ChestX-Det 기준, 이후 RSNA로 대체)
-├── dataset.py             # XrayDataset 클래스 (이후 RSNA 기준으로 재작성)
-└── train.py               # DataLoader + Sampler (1주차 버전)
+week1/
+├── config.py        # 환경 확인 스크립트
+└── data_split.py    # Train/Val/Test 분할 생성
+week2/
+└── dataset.py       # RSNA Dataset 클래스 (전처리 파이프라인 포함)
 ```
-
----
-
-## 다음 주 계획 (2주차)
-
-- [ ] ViT-Base/16 백본 로드 및 구조 파악
-- [ ] Classification Head 구현 (CLS 토큰 → FC → BCEWithLogitsLoss)
-- [ ] Segmentation Head 구현 (패치 토큰 → reshape → Upsample)
-- [ ] 멀티태스크 모델 통합 (Total Loss = BCE + Dice)
-- [ ] 학습 루프 구현 (AdamW + CosineAnnealingLR + Mixed Precision + Early Stopping)
-- [ ] 학습 실행 및 성능 평가 → 데이터 부족 시 RSNA로 전환 검토

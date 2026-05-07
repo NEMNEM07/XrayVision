@@ -1,4 +1,4 @@
-# XrayVision 🫁
+# XrayVision 
 
 > 흉부 X-ray 이상 탐지 — ViT-Base/16 파인튜닝 + 멀티태스크 학습 (분류 + 세그멘테이션)
 

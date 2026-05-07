@@ -167,8 +167,6 @@ Mean Dice: 0.4997
 | AUROC 0.47 | ViT-Large + 데이터 3,578장 부족 | ViT-Base + RSNA 26,684장으로 교체 |
 | `BCELoss` autocast 오류 | BCELoss는 autocast 미지원 | `BCEWithLogitsLoss`로 교체 |
 | `label_smoothing` 파라미터 없음 | BCEWithLogitsLoss에 미구현 | `LabelSmoothingBCE` 직접 구현 |
-| Windows multiprocessing 오류 | `num_workers>0` 시 main 보호 필요 | `if __name__ == '__main__'` + `main()` 함수 |
-| `from week2.dataset import` 오류 | sys.path 미설정 | 각 파일 상단에 `sys.path.insert(0, root)` 추가 |
 
 ---
 

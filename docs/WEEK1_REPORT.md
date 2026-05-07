@@ -139,9 +139,6 @@ T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 |------|------|------|
 | `conda` 명령어 인식 안 됨 | Anaconda 미설치 | venv로 전환 |
 | RTX 5090 CUDA 경고 | PyTorch 2.5.1이 sm_120 미지원 | nightly cu128로 교체 |
-| `datasets` 모듈 없음 | 시스템 Python에 설치됨 | pip 복구 후 venv에 재설치 |
-| Kaggle 403 오류 | 전화번호 인증 필요 | 인증 후 RSNA 다운로드 |
-| DICOM `stage_2_train_labels.csv` 폴더로 인식 | 압축 해제 시 폴더 구조 중첩 | 경로를 `data/stage_2_train_labels.csv/stage_2_train_labels.csv`로 수정 |
 
 ---
 
@@ -163,7 +160,6 @@ T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ```
 week1/
 ├── config.py        # 환경 확인 스크립트
-└── data_split.py    # Train/Val/Test 분할 생성
 week2/
 └── dataset.py       # RSNA Dataset 클래스 (전처리 파이프라인 포함)
 ```

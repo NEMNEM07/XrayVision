@@ -305,8 +305,6 @@ python week3/inference.py [경로] --checkpoint checkpoints/best_model.pt --save
 |------|--------|------|---------|
 | 모델 선택 | ViT-Large 추천 | AUROC 0.47 | ViT-Base 교체 + RSNA 확장 |
 | Loss 설정 | `BCEWithLogitsLoss(label_smoothing=0.1)` | TypeError | `LabelSmoothingBCE` 직접 구현 |
-| DataLoader | `num_workers=4` (Windows) | multiprocessing 오류 | `main()` 함수로 감싸서 해결 |
-| 텍스트 | 한글 텍스트 포함 코드 | 폰트 경고 다수 | 전체 영문으로 교체 |
 
 ### 절약 시간 추정
 

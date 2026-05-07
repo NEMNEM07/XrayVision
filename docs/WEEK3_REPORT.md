@@ -99,15 +99,6 @@ Saved:  results/[파일명]_result.png
 
 ---
 
-## 트러블슈팅
-
-| 문제 | 원인 | 해결 |
-|------|------|------|
-| 한글 폰트 경고 | matplotlib DejaVu Sans 한글 미지원 | 모든 텍스트 영문으로 교체 |
-| `from week2.model import` 오류 | sys.path 미설정 | 파일 상단 `sys.path.insert(0, root)` 추가 |
-
----
-
 ## AI 활용 내역
 
 | 작업 | AI 활용 | 직접 판단/수정 |
